@@ -80,15 +80,17 @@ export default function Jobs() {
 
   const handleApply = async (jobId) => {
     setApplying(jobId);
+    toast.loading('Generating tailored resume and cover letter with AI...', { id: 'applying' });
     try {
       const token = localStorage.getItem('token');
       const response = await axios.post(`${API}/applications/${jobId}`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 120000 // 2 minute timeout for AI generation
       });
-      toast.success('Application created! Tailored resume and cover letter generated.');
+      toast.success('Application created! Tailored resume and cover letter generated.', { id: 'applying' });
       navigate('/applications');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Failed to apply');
+      toast.error(error.response?.data?.detail || 'Failed to apply', { id: 'applying' });
     } finally {
       setApplying(null);
     }
