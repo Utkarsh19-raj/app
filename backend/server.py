@@ -337,6 +337,22 @@ async def get_resume(current_user: dict = Depends(get_current_user)):
         return None
     return resume
 
+@api_router.put("/resume/{resume_id}")
+async def update_resume(
+    resume_id: str,
+    resume_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    result = await db.resumes.update_one(
+        {"id": resume_id, "user_id": current_user['id']},
+        {"$set": {"parsed_data": resume_data}}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Resume not found")
+    
+    return {"message": "Resume updated successfully"}
+
 # Job Routes
 @api_router.post("/jobs", response_model=Job)
 async def create_job(
