@@ -7,6 +7,7 @@ import Dashboard from '@/pages/Dashboard';
 import Jobs from '@/pages/Jobs';
 import Applications from '@/pages/Applications';
 import ApplicationDetail from '@/pages/ApplicationDetail';
+import ResumeEditor from '@/pages/ResumeEditor';
 import { Toaster } from '@/components/ui/sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
