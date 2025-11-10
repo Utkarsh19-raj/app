@@ -1,5 +1,5 @@
 import { useState, useContext } from 'react';
-import { AuthContext, API } from '@/App';
+import { AuthContext } from '@/App'; // Removed API import
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,16 +18,19 @@ export default function Login() {
   const [loginData, setLoginData] = useState({ email: '', password: '' });
   const [registerData, setRegisterData] = useState({ email: '', password: '', full_name: '' });
 
+  const BACKEND_URL = "http://127.0.0.1:5000"; // Flask backend URL
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post(`${API}/auth/login`, loginData);
-      login(response.data.access_token, response.data.user);
+      const response = await axios.post(`${BACKEND_URL}/api/login`, loginData);
+      login(response.data.access_token || 'dummy-token', response.data.user || {});
       toast.success('Welcome back!');
       navigate('/');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Login failed');
+      console.error(error);
+      toast.error(error.response?.data?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -37,12 +40,17 @@ export default function Login() {
     e.preventDefault();
     setLoading(true);
     try {
-      const response = await axios.post(`${API}/auth/register`, registerData);
-      login(response.data.access_token, response.data.user);
+      const response = await axios.post(`${BACKEND_URL}/api/register`, {
+        name: registerData.full_name,
+        email: registerData.email,
+        password: registerData.password,
+      });
+      login(response.data.access_token || 'dummy-token', response.data.user || {});
       toast.success('Account created successfully!');
       navigate('/');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Registration failed');
+      console.error(error);
+      toast.error(error.response?.data?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -50,10 +58,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 flex">
-      {/* Left Side - Hero */}
+      {/* Left Side */}
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-indigo-600 via-purple-600 to-blue-600 p-12 flex-col justify-between relative overflow-hidden">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNnoiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLW9wYWNpdHk9Ii4xIi8+PC9nPjwvc3ZnPg==')] opacity-10"></div>
-        
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
@@ -61,7 +68,6 @@ export default function Login() {
             </div>
             <h1 className="text-3xl font-bold text-white">HireMe AutoPilot</h1>
           </div>
-          
           <div className="space-y-6">
             <h2 className="text-5xl font-bold text-white leading-tight">
               Land Your Dream Job
@@ -73,7 +79,6 @@ export default function Login() {
             </p>
           </div>
         </div>
-
         <div className="relative z-10 grid grid-cols-3 gap-4">
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/20">
             <Sparkles className="w-8 h-8 text-white mb-2" />
@@ -96,17 +101,13 @@ export default function Login() {
       {/* Right Side - Auth Forms */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          <div className="lg:hidden mb-8 text-center">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">HireMe AutoPilot</h1>
-            <p className="text-gray-600">AI-powered job applications</p>
-          </div>
-
           <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-8" data-testid="auth-tabs">
-              <TabsTrigger value="login" data-testid="login-tab">Login</TabsTrigger>
-              <TabsTrigger value="register" data-testid="register-tab">Register</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-2 mb-8">
+              <TabsTrigger value="login">Login</TabsTrigger>
+              <TabsTrigger value="register">Register</TabsTrigger>
             </TabsList>
 
+            {/* Login Tab */}
             <TabsContent value="login">
               <Card className="border-2 shadow-xl">
                 <CardHeader>
@@ -119,7 +120,6 @@ export default function Login() {
                       <Label htmlFor="login-email">Email</Label>
                       <Input
                         id="login-email"
-                        data-testid="login-email-input"
                         type="email"
                         placeholder="your@email.com"
                         value={loginData.email}
@@ -131,7 +131,6 @@ export default function Login() {
                       <Label htmlFor="login-password">Password</Label>
                       <Input
                         id="login-password"
-                        data-testid="login-password-input"
                         type="password"
                         placeholder="Enter your password"
                         value={loginData.password}
@@ -141,7 +140,6 @@ export default function Login() {
                     </div>
                     <Button
                       type="submit"
-                      data-testid="login-submit-button"
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
                       disabled={loading}
                     >
@@ -152,6 +150,7 @@ export default function Login() {
               </Card>
             </TabsContent>
 
+            {/* Register Tab */}
             <TabsContent value="register">
               <Card className="border-2 shadow-xl">
                 <CardHeader>
@@ -164,7 +163,6 @@ export default function Login() {
                       <Label htmlFor="register-name">Full Name</Label>
                       <Input
                         id="register-name"
-                        data-testid="register-name-input"
                         type="text"
                         placeholder="John Doe"
                         value={registerData.full_name}
@@ -176,7 +174,6 @@ export default function Login() {
                       <Label htmlFor="register-email">Email</Label>
                       <Input
                         id="register-email"
-                        data-testid="register-email-input"
                         type="email"
                         placeholder="your@email.com"
                         value={registerData.email}
@@ -188,7 +185,6 @@ export default function Login() {
                       <Label htmlFor="register-password">Password</Label>
                       <Input
                         id="register-password"
-                        data-testid="register-password-input"
                         type="password"
                         placeholder="Create a strong password"
                         value={registerData.password}
@@ -198,7 +194,6 @@ export default function Login() {
                     </div>
                     <Button
                       type="submit"
-                      data-testid="register-submit-button"
                       className="w-full bg-indigo-600 hover:bg-indigo-700 text-white"
                       disabled={loading}
                     >

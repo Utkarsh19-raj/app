@@ -11,7 +11,7 @@ import ResumeEditor from '@/pages/ResumeEditor';
 import { Toaster } from '@/components/ui/sonner';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-export const API = `${BACKEND_URL}/api`;
+export const API = "http://127.0.0.1:5000/api";
 
 // Auth Context
 export const AuthContext = React.createContext();

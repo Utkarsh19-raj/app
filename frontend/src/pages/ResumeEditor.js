@@ -1,7 +1,14 @@
-import { useState, useEffect } from 'react';
+// ResumeEditor.js
+import { useState, useEffect, useRef } from 'react';
 import { API } from '@/App';
 import Layout from '@/components/Layout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,15 +17,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import axios from 'axios';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Save, Eye, Edit, Plus, Trash2, ArrowLeft } from 'lucide-react';
+import {
+  Upload,
+  Save,
+  Eye,
+  Edit,
+  Plus,
+  Trash2,
+  ArrowLeft,
+} from 'lucide-react';
 
 export default function ResumeEditor() {
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const reuploadInputRef = useRef(null);
+
   const [resume, setResume] = useState(null);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  
+
   const [editData, setEditData] = useState({
     name: '',
     email: '',
@@ -27,9 +45,12 @@ export default function ResumeEditor() {
     skills: [],
     experience: [],
     education: [],
-    keywords: []
+    keywords: [],
   });
 
+  // -------------------------------------------------
+  // FETCH RESUME
+  // -------------------------------------------------
   useEffect(() => {
     fetchResume();
   }, []);
@@ -37,72 +58,119 @@ export default function ResumeEditor() {
   const fetchResume = async () => {
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get(`${API}/resume`, {
-        headers: { Authorization: `Bearer ${token}` }
+      if (!token) {
+        toast.error('Please log in to continue');
+        navigate('/login');
+        return;
+      }
+
+      const response = await axios.get(`${API}/api/resume`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       if (response.data) {
         setResume(response.data);
+        const parsed = response.data.parsed_data || {};
         setEditData({
-          name: response.data.parsed_data?.name || '',
-          email: response.data.parsed_data?.email || '',
-          phone: response.data.parsed_data?.phone || '',
-          summary: response.data.parsed_data?.summary || '',
-          skills: response.data.parsed_data?.skills || [],
-          experience: response.data.parsed_data?.experience || [],
-          education: response.data.parsed_data?.education || [],
-          keywords: response.data.parsed_data?.keywords || []
+          name: parsed.name || '',
+          email: parsed.email || '',
+          phone: parsed.phone || '',
+          summary: parsed.summary || '',
+          skills: parsed.skills || [],
+          experience: parsed.experience || [],
+          education: parsed.education || [],
+          keywords: parsed.keywords || [],
         });
       }
     } catch (error) {
       console.error('Error fetching resume:', error);
+      if (error.response?.status === 401) {
+        toast.error('Session expired. Please log in again.');
+        navigate('/login');
+      }
     }
   };
 
+  // -------------------------------------------------
+  // FILE UPLOAD
+  // -------------------------------------------------
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+    const allowedTypes = [
+      'application/pdf',
+      'text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
 
-      const token = localStorage.getItem('token');
-      await axios.post(`${API}/resume/upload`, formData, {
+    if (!allowedTypes.includes(file.type)) {
+      toast.error('Only PDF, DOC, DOCX, or TXT files are allowed.');
+      return;
+    }
+
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      toast.error('Authentication required');
+      navigate('/login');
+      return;
+    }
+
+    try {
+      await axios.post(`${API}/api/resume/upload`, formData, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data'
-        }
+          // DO NOT set Content-Type – let the browser add the boundary
+        },
+        timeout: 30000,
       });
 
       toast.success('Resume uploaded and parsed successfully!');
       fetchResume();
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Upload failed');
+      const msg =
+        error.response?.data?.detail ||
+        error.response?.data?.error ||
+        error.message ||
+        'Upload failed. Please try again.';
+      toast.error(msg);
     } finally {
       setUploading(false);
+      e.target.value = ''; // reset input
     }
   };
 
+  // -------------------------------------------------
+  // SAVE CHANGES
+  // -------------------------------------------------
   const handleSave = async () => {
+    if (!resume) return;
+
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`${API}/resume/${resume.id}`, editData, {
-        headers: { Authorization: `Bearer ${token}` }
+      await axios.put(`${API}/api/resume/${resume.id}`, editData, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      
+
       toast.success('Resume updated successfully!');
       setEditing(false);
       fetchResume();
     } catch (error) {
-      toast.error('Failed to update resume');
+      toast.error(error.response?.data?.detail || 'Failed to save resume');
     } finally {
       setSaving(false);
     }
   };
 
+  // -------------------------------------------------
+  // SKILLS HELPERS
+  // -------------------------------------------------
   const addSkill = () => {
     setEditData({ ...editData, skills: [...editData.skills, ''] });
   };
@@ -114,14 +182,22 @@ export default function ResumeEditor() {
   };
 
   const removeSkill = (index) => {
-    const newSkills = editData.skills.filter((_, i) => i !== index);
-    setEditData({ ...editData, skills: newSkills });
+    setEditData({
+      ...editData,
+      skills: editData.skills.filter((_, i) => i !== index),
+    });
   };
 
+  // -------------------------------------------------
+  // EXPERIENCE HELPERS
+  // -------------------------------------------------
   const addExperience = () => {
     setEditData({
       ...editData,
-      experience: [...editData.experience, { title: '', company: '', duration: '', description: '' }]
+      experience: [
+        ...editData.experience,
+        { title: '', company: '', duration: '', description: '' },
+      ],
     });
   };
 
@@ -132,14 +208,19 @@ export default function ResumeEditor() {
   };
 
   const removeExperience = (index) => {
-    const newExp = editData.experience.filter((_, i) => i !== index);
-    setEditData({ ...editData, experience: newExp });
+    setEditData({
+      ...editData,
+      experience: editData.experience.filter((_, i) => i !== index),
+    });
   };
 
+  // -------------------------------------------------
+  // EDUCATION HELPERS
+  // -------------------------------------------------
   const addEducation = () => {
     setEditData({
       ...editData,
-      education: [...editData.education, { degree: '', institution: '', year: '' }]
+      education: [...editData.education, { degree: '', institution: '', year: '' }],
     });
   };
 
@@ -150,10 +231,15 @@ export default function ResumeEditor() {
   };
 
   const removeEducation = (index) => {
-    const newEdu = editData.education.filter((_, i) => i !== index);
-    setEditData({ ...editData, education: newEdu });
+    setEditData({
+      ...editData,
+      education: editData.education.filter((_, i) => i !== index),
+    });
   };
 
+  // -------------------------------------------------
+  // RENDER: NO RESUME YET
+  // -------------------------------------------------
   if (!resume) {
     return (
       <Layout>
@@ -174,22 +260,28 @@ export default function ResumeEditor() {
                 Upload Your Resume
               </CardTitle>
               <CardDescription>
-                Start by uploading your resume. AI will parse and extract key information for you to review and edit.
+                Start by uploading your resume. AI will parse and extract key
+                information for you to review.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <label htmlFor="resume-upload">
-                <Button
-                  data-testid="upload-resume-button"
-                  className="bg-indigo-600 hover:bg-indigo-700"
-                  disabled={uploading}
-                  onClick={() => document.getElementById('resume-upload').click()}
-                >
-                  {uploading ? 'Uploading...' : 'Choose File'}
-                </Button>
-              </label>
+              <Button
+                data-testid="upload-resume-button"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                    Uploading...
+                  </>
+                ) : (
+                  'Choose File'
+                )}
+              </Button>
               <input
-                id="resume-upload"
+                ref={fileInputRef}
                 type="file"
                 accept=".pdf,.txt,.doc,.docx"
                 onChange={handleFileUpload}
@@ -202,6 +294,9 @@ export default function ResumeEditor() {
     );
   }
 
+  // -------------------------------------------------
+  // MAIN UI (RESUME EXISTS)
+  // -------------------------------------------------
   return (
     <Layout>
       <div className="space-y-6" data-testid="resume-editor">
@@ -216,33 +311,36 @@ export default function ResumeEditor() {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Back to Dashboard
             </Button>
-            <h1 className="text-4xl font-bold text-gray-900 mb-2">Resume Editor</h1>
-            <p className="text-lg text-gray-600">Review and edit your parsed resume information</p>
+            <h1 className="text-4xl font-bold text-gray-900 mb-2">
+              Resume Editor
+            </h1>
+            <p className="text-lg text-gray-600">
+              Review and edit your parsed resume information
+            </p>
           </div>
+
           <div className="flex gap-2">
-            <label htmlFor="resume-reupload">
-              <Button
-                variant="outline"
-                disabled={uploading}
-                onClick={() => document.getElementById('resume-reupload').click()}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                {uploading ? 'Uploading...' : 'Upload New'}
-              </Button>
-            </label>
+            <Button
+              variant="outline"
+              disabled={uploading}
+              onClick={() => reuploadInputRef.current?.click()}
+            >
+              <Upload className="w-4 h-4 mr-2" />
+              {uploading ? 'Uploading...' : 'Upload New'}
+            </Button>
             <input
-              id="resume-reupload"
+              ref={reuploadInputRef}
               type="file"
               accept=".pdf,.txt,.doc,.docx"
               onChange={handleFileUpload}
               className="hidden"
             />
-            
+
             {!editing ? (
               <Button
                 data-testid="edit-resume-button"
                 onClick={() => setEditing(true)}
-                className="bg-indigo-600 hover:bg-indigo-700"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white"
               >
                 <Edit className="w-4 h-4 mr-2" />
                 Edit Resume
@@ -262,7 +360,7 @@ export default function ResumeEditor() {
                   data-testid="save-resume-button"
                   onClick={handleSave}
                   disabled={saving}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   <Save className="w-4 h-4 mr-2" />
                   {saving ? 'Saving...' : 'Save Changes'}
@@ -272,6 +370,7 @@ export default function ResumeEditor() {
           </div>
         </div>
 
+        {/* Tabs */}
         <Tabs defaultValue="preview" className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="preview" data-testid="preview-tab">
@@ -284,7 +383,7 @@ export default function ResumeEditor() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Preview Tab */}
+          {/* ---------- PREVIEW TAB ---------- */}
           <TabsContent value="preview">
             <Card>
               <CardHeader>
@@ -292,30 +391,47 @@ export default function ResumeEditor() {
                 <CardDescription>How your resume data looks</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                {/* Personal Info */}
                 <div className="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-lg">
-                  <h2 className="text-3xl font-bold text-gray-900 mb-2" data-testid="preview-name">
+                  <h2
+                    className="text-3xl font-bold text-gray-900 mb-2"
+                    data-testid="preview-name"
+                  >
                     {editData.name || 'No name provided'}
                   </h2>
                   <div className="flex flex-wrap gap-4 text-gray-600">
-                    {editData.email && <span data-testid="preview-email">📧 {editData.email}</span>}
-                    {editData.phone && <span data-testid="preview-phone">📱 {editData.phone}</span>}
+                    {editData.email && (
+                      <span data-testid="preview-email">
+                        Email: {editData.email}
+                      </span>
+                    )}
+                    {editData.phone && (
+                      <span data-testid="preview-phone">
+                        Phone: {editData.phone}
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Summary */}
                 {editData.summary && (
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-2">Professional Summary</h3>
-                    <p className="text-gray-700" data-testid="preview-summary">{editData.summary}</p>
+                    <h3 className="text-xl font-bold text-gray-900 mb-2">
+                      Professional Summary
+                    </h3>
+                    <p className="text-gray-700" data-testid="preview-summary">
+                      {editData.summary}
+                    </p>
                   </div>
                 )}
 
-                {/* Skills */}
-                {editData.skills.length > 0 && (
+                {editData.skills && editData.skills.length > 0 && (
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-3">Skills</h3>
-                    <div className="flex flex-wrap gap-2" data-testid="preview-skills">
+                    <h3 className="text-xl font-bold text-gray-900 mb-3">
+                      Skills
+                    </h3>
+                    <div
+                      className="flex flex-wrap gap-2"
+                      data-testid="preview-skills"
+                    >
                       {editData.skills.map((skill, idx) => (
                         <span
                           key={idx}
@@ -328,33 +444,63 @@ export default function ResumeEditor() {
                   </div>
                 )}
 
-                {/* Experience */}
-                {editData.experience.length > 0 && (
+                {editData.experience && editData.experience.length > 0 && (
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-3">Experience</h3>
-                    <div className="space-y-4" data-testid="preview-experience">
+                    <h3 className="text-xl font-bold text-gray-900 mb-3">
+                      Experience
+                    </h3>
+                    <div
+                      className="space-y-4"
+                      data-testid="preview-experience"
+                    >
                       {editData.experience.map((exp, idx) => (
-                        <div key={idx} className="border-l-4 border-indigo-500 pl-4">
-                          <h4 className="font-bold text-lg text-gray-900">{exp.title}</h4>
-                          <p className="text-gray-600 font-medium">{exp.company}</p>
-                          {exp.duration && <p className="text-sm text-gray-500">{exp.duration}</p>}
-                          {exp.description && <p className="text-gray-700 mt-2">{exp.description}</p>}
+                        <div
+                          key={idx}
+                          className="border-l-4 border-indigo-500 pl-4"
+                        >
+                          <h4 className="font-bold text-lg text-gray-900">
+                            {exp.title}
+                          </h4>
+                          <p className="text-gray-600 font-medium">
+                            {exp.company}
+                          </p>
+                          {exp.duration && (
+                            <p className="text-sm text-gray-500">
+                              {exp.duration}
+                            </p>
+                          )}
+                          {exp.description && (
+                            <p className="text-gray-700 mt-2">
+                              {exp.description}
+                            </p>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {/* Education */}
-                {editData.education.length > 0 && (
+                {editData.education && editData.education.length > 0 && (
                   <div>
-                    <h3 className="text-xl font-bold text-gray-900 mb-3">Education</h3>
-                    <div className="space-y-3" data-testid="preview-education">
+                    <h3 className="text-xl font-bold text-gray-900 mb-3">
+                      Education
+                    </h3>
+                    <div
+                      className="space-y-3"
+                      data-testid="preview-education"
+                    >
                       {editData.education.map((edu, idx) => (
-                        <div key={idx} className="border-l-4 border-purple-500 pl-4">
-                          <h4 className="font-bold text-gray-900">{edu.degree}</h4>
+                        <div
+                          key={idx}
+                          className="border-l-4 border-purple-500 pl-4"
+                        >
+                          <h4 className="font-bold text-gray-900">
+                            {edu.degree}
+                          </h4>
                           <p className="text-gray-600">{edu.institution}</p>
-                          {edu.year && <p className="text-sm text-gray-500">{edu.year}</p>}
+                          {edu.year && (
+                            <p className="text-sm text-gray-500">{edu.year}</p>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -364,17 +510,21 @@ export default function ResumeEditor() {
             </Card>
           </TabsContent>
 
-          {/* Edit Tab */}
+          {/* ---------- EDIT TAB ---------- */}
           <TabsContent value="edit">
             <Card>
               <CardHeader>
                 <CardTitle>Edit Resume Information</CardTitle>
-                <CardDescription>Update your parsed resume data</CardDescription>
+                <CardDescription>
+                  Update your parsed resume data
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {/* Personal Info */}
                 <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-900">Personal Information</h3>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    Personal Information
+                  </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="name">Full Name</Label>
@@ -382,7 +532,9 @@ export default function ResumeEditor() {
                         id="name"
                         data-testid="edit-name"
                         value={editData.name}
-                        onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                        onChange={(e) =>
+                          setEditData({ ...editData, name: e.target.value })
+                        }
                         disabled={!editing}
                       />
                     </div>
@@ -393,7 +545,9 @@ export default function ResumeEditor() {
                         data-testid="edit-email"
                         type="email"
                         value={editData.email}
-                        onChange={(e) => setEditData({ ...editData, email: e.target.value })}
+                        onChange={(e) =>
+                          setEditData({ ...editData, email: e.target.value })
+                        }
                         disabled={!editing}
                       />
                     </div>
@@ -403,7 +557,9 @@ export default function ResumeEditor() {
                         id="phone"
                         data-testid="edit-phone"
                         value={editData.phone}
-                        onChange={(e) => setEditData({ ...editData, phone: e.target.value })}
+                        onChange={(e) =>
+                          setEditData({ ...editData, phone: e.target.value })
+                        }
                         disabled={!editing}
                       />
                     </div>
@@ -414,7 +570,9 @@ export default function ResumeEditor() {
                       id="summary"
                       data-testid="edit-summary"
                       value={editData.summary}
-                      onChange={(e) => setEditData({ ...editData, summary: e.target.value })}
+                      onChange={(e) =>
+                        setEditData({ ...editData, summary: e.target.value })
+                      }
                       rows={4}
                       disabled={!editing}
                     />
@@ -424,7 +582,9 @@ export default function ResumeEditor() {
                 {/* Skills */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-900">Skills</h3>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      Skills
+                    </h3>
                     {editing && (
                       <Button
                         size="sm"
@@ -465,7 +625,9 @@ export default function ResumeEditor() {
                 {/* Experience */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-900">Experience</h3>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      Experience
+                    </h3>
                     {editing && (
                       <Button
                         size="sm"
@@ -483,7 +645,9 @@ export default function ResumeEditor() {
                       <Card key={idx} className="border-2">
                         <CardContent className="pt-6 space-y-3">
                           <div className="flex justify-between items-start">
-                            <h4 className="font-semibold">Experience {idx + 1}</h4>
+                            <h4 className="font-semibold">
+                              Experience {idx + 1}
+                            </h4>
                             {editing && (
                               <Button
                                 size="sm"
@@ -500,14 +664,18 @@ export default function ResumeEditor() {
                               data-testid={`exp-title-${idx}`}
                               placeholder="Job Title"
                               value={exp.title}
-                              onChange={(e) => updateExperience(idx, 'title', e.target.value)}
+                              onChange={(e) =>
+                                updateExperience(idx, 'title', e.target.value)
+                              }
                               disabled={!editing}
                             />
                             <Input
                               data-testid={`exp-company-${idx}`}
                               placeholder="Company"
                               value={exp.company}
-                              onChange={(e) => updateExperience(idx, 'company', e.target.value)}
+                              onChange={(e) =>
+                                updateExperience(idx, 'company', e.target.value)
+                              }
                               disabled={!editing}
                             />
                           </div>
@@ -515,14 +683,18 @@ export default function ResumeEditor() {
                             data-testid={`exp-duration-${idx}`}
                             placeholder="Duration (e.g., 2020-2024)"
                             value={exp.duration}
-                            onChange={(e) => updateExperience(idx, 'duration', e.target.value)}
+                            onChange={(e) =>
+                              updateExperience(idx, 'duration', e.target.value)
+                            }
                             disabled={!editing}
                           />
                           <Textarea
                             data-testid={`exp-description-${idx}`}
                             placeholder="Description"
                             value={exp.description}
-                            onChange={(e) => updateExperience(idx, 'description', e.target.value)}
+                            onChange={(e) =>
+  updateExperience(idx, 'description', e.target.value)
+                            }
                             rows={3}
                             disabled={!editing}
                           />
@@ -535,7 +707,9 @@ export default function ResumeEditor() {
                 {/* Education */}
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-bold text-gray-900">Education</h3>
+                    <h3 className="text-lg font-bold text-gray-900">
+                      Education
+                    </h3>
                     {editing && (
                       <Button
                         size="sm"
@@ -553,7 +727,9 @@ export default function ResumeEditor() {
                       <Card key={idx} className="border-2">
                         <CardContent className="pt-6 space-y-3">
                           <div className="flex justify-between items-start">
-                            <h4 className="font-semibold">Education {idx + 1}</h4>
+                            <h4 className="font-semibold">
+                              Education {idx + 1}
+                            </h4>
                             {editing && (
                               <Button
                                 size="sm"
@@ -569,21 +745,27 @@ export default function ResumeEditor() {
                             data-testid={`edu-degree-${idx}`}
                             placeholder="Degree"
                             value={edu.degree}
-                            onChange={(e) => updateEducation(idx, 'degree', e.target.value)}
+                            onChange={(e) =>
+                              updateEducation(idx, 'degree', e.target.value)
+                            }
                             disabled={!editing}
                           />
                           <Input
                             data-testid={`edu-institution-${idx}`}
                             placeholder="Institution"
                             value={edu.institution}
-                            onChange={(e) => updateEducation(idx, 'institution', e.target.value)}
+                            onChange={(e) =>
+                              updateEducation(idx, 'institution', e.target.value)
+                            }
                             disabled={!editing}
                           />
                           <Input
                             data-testid={`edu-year-${idx}`}
                             placeholder="Year"
                             value={edu.year}
-                            onChange={(e) => updateEducation(idx, 'year', e.target.value)}
+                            onChange={(e) =>
+                              updateEducation(idx, 'year', e.target.value)
+                            }
                             disabled={!editing}
                           />
                         </CardContent>
